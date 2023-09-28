@@ -1,6 +1,21 @@
 # KVM with PCIe Passthrough
 
+![GitHub](https://img.shields.io/github/license/nguyencanhtrung/kvm-pcie)
+![GitHub last commit](https://img.shields.io/github/last-commit/nguyencanhtrung/kvm-pcie)
+
 This guide will walk you through the process of installing KVM (Kernel-based Virtual Machine) and setting up PCIe passthrough on a Linux system.
+
+## Table of Contents
+
+- [Prerequisites](#prerequisites)
+- [Step 1: Install KVM](#step-1-install-kvm)
+- [Step 2: Create `ukvm2004` VM using `virt-install`](#step-2-create-ukvm2004-vm-using-virt-install)
+- [Step 3: Configure IOMMU and passthrough with `vfio-pci` driver for Xilinx AU200 card](#step-3-configure-iommu-and-passthrough-with-vfio-pci-driver-for-xilinx-au200-card)
+- [Step 4: Check IOMMU group with provided script in this repo](#step-4-check-iommu-group-with-provided-script-in-this-repo)
+- [Step 5: Patched ACS kernel](#step-5-patched-acs-kernel)
+- [Step 6: Configure PCIe Passthrough for VM](#step-6-configure-pcie-passthrough-for-vm)
+- [Step 7: Run the Virtual Machine](#step-7-run-the-virtual-machine)
+- [Step 8: Access the Virtual Machine](#step-8-access-the-virtual-machine)
 
 ## Prerequisites
 
@@ -26,7 +41,7 @@ Before getting started, ensure that you meet the following prerequisites:
 ```shell
 sudo apt update
 sudo apt install qemu-kvm libvirt-clients libvirt-daemon-system virtinst bridge-utils cpu-checker virt-viewer virt-manager qemu-system
-    ```
+```
 
 ### 2. Now, check if your system can use KVM acceleration by typing:
 
