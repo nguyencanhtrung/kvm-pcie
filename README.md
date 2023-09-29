@@ -10,12 +10,11 @@ This guide will walk you through the process of installing KVM (Kernel-based Vir
 - [Prerequisites](#prerequisites)
 - [Step 1: Install KVM](#step-1-install-kvm)
 - [Step 2: Create `ukvm2004` VM using `virt-install`](#step-2-create-ukvm2004-vm-using-virt-install)
-- [Step 3: Configure IOMMU and passthrough with `vfio-pci` driver for Xilinx AU200 card](#step-3-configure-iommu-and-passthrough-with-vfio-pci-driver-for-xilinx-au200-card)
+- [Step 3: Enable IOMMU and passthrough with `vfio-pci` driver for Xilinx AU200 card](#step-3-enable-iommu-and-passthrough-with-vfio-pci-driver-for-xilinx-au200-card)
 - [Step 4: Check IOMMU group with provided script in this repo](#step-4-check-iommu-group-with-provided-script-in-this-repo)
-- [Step 5: Patched ACS kernel](#step-5-patched-acs-kernel)
-- [Step 6: Configure PCIe Passthrough for VM](#step-6-configure-pcie-passthrough-for-vm)
-- [Step 7: Run the Virtual Machine](#step-7-run-the-virtual-machine)
-- [Step 8: Access the Virtual Machine](#step-8-access-the-virtual-machine)
+- [Step 5: Build patched ACS kernel](#step-5-build-patched-acs-kernel)
+- [Step 6: Attach PCIe cards to KVM](#step-6-attach-pcie-cards-to-kvm)
+- [Step 7: Access the Virtual Machine](#step-7-access-the-virtual-machine)
 
 ## Prerequisites
 
@@ -269,7 +268,9 @@ virsh undefine ukvm2004
 **Reference:** Visit [kvm all commands](https://fabianlee.org/2018/08/27/kvm-bare-metal-virtualization-on-ubuntu-with-kvm/)  and [Xilinx instruction](https://www.xilinx.com/developer/articles/using-alveo-data-center-accelerator-cards-in-a-kvm-environment.html)
 
 
-## Step 3: Configure IOMMU and passthrough with `vfio-pci` driver for Xilinx AU200 card
+## Step 3: Enable IOMMU and passthrough with `vfio-pci` driver for Xilinx AU200 card
+
+### 1. Enable IOMMU
 
 1. Open the grub configuration file:
 
@@ -295,15 +296,15 @@ $ lspci -nn | grep "Xilinx"
 
 3. Update grub:
 
-    ```shell
-    sudo update-grub
-    ```
+```shell
+sudo update-grub
+```
 
-    or
+or
 
-    ```shell
-    sudo grub-mkconfig -o /boot/grub/grub.cfg
-    ```
+```shell
+sudo grub-mkconfig -o /boot/grub/grub.cfg
+```
 
 Check the new content of Grub by
 
@@ -316,17 +317,18 @@ BOOT_IMAGE=/boot/vmlinuz-5.15.0-acso root=UUID=2006ace4-1a9a-4d7f-aa7c-685cae3ab
 
 4. Create a new file under `/etc/modprobe.d/vfio.conf` add the below
 
-    ```shell
-    options vfio-pci ids=10ee:5000,10ee:5001
-    ```
+```shell
+options vfio-pci ids=10ee:5000,10ee:5001
+```
 
 5. Update the `initramfs` using the below command and reboot the host.
 
-    ```shell
-    sudo update-initramfs -u
-    ```
+```shell
+sudo update-initramfs -u
+sudo reboot
+```
 
-After the reboot of the host, check NVIDA is configure for Pass-through using the below command.
+After the reboot of the host, check Xilinx is configure for Pass-through using the below command.
 
 ```
 $ lspci -k
@@ -373,9 +375,9 @@ Group:  4   0000:00:14.0 USB controller [0c03]: Intel Corporation Cannon Lake PC
 
 Now, you can see the Xilinx card is in the same IOMMU group `Group 1` with NVIDIA GPU. Passing through Xilinx card to KVM requires all devices in the same group use the same `vfio-pci`
 
-Watch [this](https://www.youtube.com/watch?v=qQiMMeVNw-o) to understand more. Splitting IOMMU is required in this case, however my machine which includes a MOBO (Z390 Gigabyte Wifi Pro + CPU 9900K) does not support `pcie_acs_override`. Therefore, even putting the grub command like above, the IOMMU is not splitting as expectation. To make it works, we have to create a Patched ACS kernel and running this kernel instead. Step 5 shows step to do so.
+Watch [this video](https://www.youtube.com/watch?v=qQiMMeVNw-o) to understand more. Splitting IOMMU is required in this case, however my machine which includes a MOBO (Z390 Gigabyte Wifi Pro + CPU 9900K) does not support `pcie_acs_override`. Therefore, even putting the grub command like above, the IOMMU is not splitting as expectation. To make it works, we have to create a Patched ACS kernel and running this kernel instead. Step 5 shows how to do so.
 
-## Step 5: Patched ACS kernel
+## Step 5: Build patched ACS kernel
 
 ### 1. Download ACS patch and original kernel to build
 
@@ -554,34 +556,220 @@ Advanced Ubuntu     (index = 1)
 [Repo](https://github.com/benbaker76/linux-acs-override)
 
 
-## Step 6: Configure PCIe Passthrough for VM
+## Step 6: Attach PCIe cards to KVM
 
-1. Find information about the PCIe card you want to passthrough:
+There are 2 ways to attach or detach PCIe devices to/from KVM which are
 
-    ```shell
-    lspci | grep VGA
-    ```
+* GUI method
+* Commandline method
 
-Note down the ID of the card, e.g., `01:00.0`.
 
-2. Create a virtual machine XML configuration file with libvirt. Edit the virtual machine XML file as provided in this repository.
+GUI and commandline method are described [here](https://documentation.suse.com/smart/virtualization-cloud/html/task-assign-pci-device-libvirt/index.html).
 
-3. Adjust the virtual machine configuration to use the selected PCIe card.
 
-## Step 7: Run the Virtual Machine
+### 1. Identify the host PCI device to assign to the VM Guest
 
-Once you've configured everything, start the virtual machine with the following command:
+```
+lspci -nn | grep "Xilinx"
 
-    ```shell
-    virt-install --name myvm --ram 4096 --vcpus 2 --disk path=/path/to/disk.img,size=20 --graphics none --os-type linux --os-variant ubuntu20.04 --console pty,target_type=serial --extra-args 'console=ttyS0'
-    ```
+```
 
-Replace `myvm` with your virtual machine's name and adjust other options as needed.
+The output is
 
-## Step 8: Access the Virtual Machine
+```
+tesla@tesla:~/kvm$ sudo lspci -nn | grep "Xilinx"
+01:00.0 Processing accelerators [1200]: Xilinx Corporation Device [10ee:5000]
+01:00.1 Processing accelerators [1200]: Xilinx Corporation Device [10ee:5001]
+```
+
+Xilinx has 2 IDs: (`01:00.0`  and `01:00.1`)
+
+### 2. Gather detailed information about the device
+
+
+```
+$ virsh nodedev-dumpxml pci_0000_01_00_0
+
+<device>
+  <name>pci_0000_01_00_0</name>
+  <path>/sys/devices/pci0000:00/0000:00:01.0/0000:01:00.0</path>
+  <parent>pci_0000_00_01_0</parent>
+  <driver>
+    <name>vfio-pci</name>
+  </driver>
+  <capability type='pci'>
+    <class>0x120000</class>
+    <domain>0</domain>
+    <bus>1</bus>
+    <slot>0</slot>
+    <function>0</function>
+    <product id='0x5000'/>
+    <vendor id='0x10ee'>Xilinx Corporation</vendor>
+    <iommuGroup number='12'>
+      <address domain='0x0000' bus='0x01' slot='0x00' function='0x0'/>
+    </iommuGroup>
+    <pci-express>
+      <link validity='cap' port='0' speed='8' width='16'/>
+      <link validity='sta' speed='8' width='8'/>
+    </pci-express>
+  </capability>
+</device>
+
+```
+
+
+and, do the same with the remaining
+
+```
+$ virsh nodedev-dumpxml pci_0000_01_00_1
+
+<device>
+   ...
+    <domain>0</domain>
+    <bus>1</bus>
+    <slot>0</slot>
+    <function>1</function>
+   ...
+</device>
+
+```
+
+Write down the values for domain, bus, slot and function.
+
+### 3. Detach the device from the host system
+
+```
+virsh nodedev-detach pci_0000_01_00_0
+```
+
+**Tip: Multi-function PCI devices**
+
+When using a multi-function PCI device that does not support FLR (function level reset) or PM (power management) reset, you need to detach all its functions from the VM Host Server. The whole device must be reset for security reasons. libvirt will refuse to assign the device if one of its functions is still in use by the VM Host Server or another VM Guest.
+
+### 4. Convert the domain, bus, slot and function from dec to hex
+
+```
+printf "<address domain='0x%x' bus='0x%x' slot='0x%x' function='0x%x'/>\n" 0 1 0 0
+printf "<address domain='0x%x' bus='0x%x' slot='0x%x' function='0x%x'/>\n" 0 1 0 1
+```
+
+Output:
+
+```
+tesla@tesla:~/kvm$ printf "<address domain='0x%x' bus='0x%x' slot='0x%x' function='0x%x'/>\n" 0 1 0 0
+<address domain='0x0' bus='0x1' slot='0x0' function='0x0'/>
+tesla@tesla:~/kvm$ printf "<address domain='0x%x' bus='0x%x' slot='0x%x' function='0x%x'/>\n" 0 1 0 1
+<address domain='0x0' bus='0x1' slot='0x0' function='0x1'/>
+
+```
+
+### 5. Run `virsh edit`
+
+```
+virsh edit ukvm2004
+```
+
+Add the following device entry in the <devices> section using the result from the previous step:
+
+```
+<hostdev mode='subsystem' type='pci' managed='yes'>
+  <source>
+    <address domain='0x0' bus='0x1' slot='0x0' function='0x0'/>
+  </source>
+</hostdev>
+```
+
+and,
+
+```
+<hostdev mode='subsystem' type='pci' managed='yes'>
+  <source>
+    <address domain='0x0' bus='0x1' slot='0x0' function='0x1'/>
+  </source>
+</hostdev>
+```
+
+
+Then, start the VM
+
+```
+virsh start ukvm2004
+```
+
+
+**Notes:**
+
+managed compared to unmanaged
+
+libvirt recognizes two modes for handling PCI devices: managed or unmanaged.
+
+If the device is managed, libvirt handles all of the details of adding or removing the device. Before starting the domain, libvirt unbinds the device from the existing driver if needed, resets the device, and binds it to vfio-pci. When the domain is terminated or the device is removed from the domain, libvirt unbinds the device from vfio-pci and rebinds it to the original driver.
+
+If the device is unmanaged, you must manually manage these tasks before assigning the device to a domain, and after the device is no longer used by the domain.
+
+In the example above, the managed='yes' option means that the device is managed. To switch the device mode to unmanaged, set managed='no'. If you do so, you need to take care of the related driver with the virsh nodedev-detach and virsh nodedev-reattach commands. Prior to starting the VM Guest you need to detach the device from the host by running
+
+```
+virsh nodedev-detach pci_0000_01_00_0
+```
+
+When the VM Guest is not running, you can make the device available for the host by running
+
+```
+virsh nodedev-reattach pci_0000_01_00_0
+```
+
+### Another way to attach PCIe devices
+
+Create a file named `pass-user.xml` and pasting the following content
+
+
+```
+<hostdev mode="subsystem" type="pci" managed="yes">
+  <source>
+    <address domain="0x0000" bus="0x01" slot="0x00" function="0x1"/>
+  </source>
+  <address type="pci" domain="0x0000" bus="0x07" slot="0x00" function="0x0"/>
+</hostdev>
+
+```
+
+Create a file named `pass-mgmt.xml` and pasting the following content
+
+```
+<hostdev mode="subsystem" type="pci" managed="yes">
+  <source>
+    <address domain="0x0000" bus="0x01" slot="0x00" function="0x0"/>
+  </source>
+  <address type="pci" domain="0x0000" bus="0x06" slot="0x00" function="0x0"/>
+</hostdev>
+```
+
+`<address domain ..>`: address of PCIe device in the HOST
+
+`<address type ..>`: address of PCIe device in the KVM (optional)
+
+
+Attach or detach must be processed when VM is destroyed.
+
+```shell
+ virsh attach-device ukvm2004 --file pass-user.xml --config
+ virsh attach-device ukvm2004 --file pass-mgmt.xml --config
+```
+
+
+```shell
+ virsh detach-device ukvm2004 --file pass-user.xml --config
+ virsh detach-device ukvm2004 --file pass-mgmt.xml --config
+```
+
+Then, starting the VM
+
+```shell
+virsh start ukvm2004
+```
+
+
+## Step 7: Access the Virtual Machine
 
 You can access the virtual machine via SSH or connect to it via remote graphical interface using VNC (if configured).
-
-## Step 9: Complete Installation
-
-Once the virtual machine is running, you can complete the operating system installation and install the software you want to use.
