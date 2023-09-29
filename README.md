@@ -270,31 +270,21 @@ virsh undefine ukvm2004
 
 ## Step 3: Enable IOMMU and passthrough with `vfio-pci` driver for Xilinx AU200 card
 
-### 1. Enable IOMMU
+### 1. Enable IOMMU on host
 
-1. Open the grub configuration file:
+Open the grub configuration file:
 
 ```shell
 sudo nano /etc/default/grub
 ```
 
-2. Add the `amd_iommu=on` or `intel_iommu=on` flags to the `GRUB_CMDLINE_LINUX` variable:
+Add the `amd_iommu=on` or `intel_iommu=on` flags to the `GRUB_CMDLINE_LINUX` variable:
 
 ```shell
-GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on pcie_acs_override=downstream,multifunction vfio-pci.ids=10ee:5000,10ee:5001"
+GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on"
 ```
 
-We can identify the pci.ids using the below command.
-
-
-```shell
-$ lspci -nn | grep "Xilinx"
-
-01:00.0 Processing accelerators [1200]: Xilinx Corporation Device [10ee:5000]
-01:00.1 Processing accelerators [1200]: Xilinx Corporation Device [10ee:5001]
-```
-
-3. Update grub:
+Update grub:
 
 ```shell
 sudo update-grub
@@ -311,21 +301,65 @@ Check the new content of Grub by
 ```shell
 cat /proc/cmdline
 
-BOOT_IMAGE=/boot/vmlinuz-5.15.0-acso root=UUID=2006ace4-1a9a-4d7f-aa7c-685cae3abe4c ro quiet intel_iommu=on pcie_acs_override=downstream,multifunction vfio-pci.ids=10ee:5000,10ee:5001
+BOOT_IMAGE=/boot/vmlinuz-5.15.0-acso root=UUID=2006ace4-1a9a-4d7f-aa7c-685cae3abe4c ro quiet intel_iommu=on
 ```
 
+### 2. Assign Xilinx AU200 card to VFIO
 
-4. Create a new file under `/etc/modprobe.d/vfio.conf` add the below
+Again, open the grub configuration file:
+
+```shell
+sudo nano /etc/default/grub
+```
+
+Add the `vfio-pci.ids=10ee:5000,10ee:5001` to the `GRUB_CMDLINE_LINUX` variable:
+
+```shell
+GRUB_CMDLINE_LINUX_DEFAULT="quiet intel_iommu=on vfio-pci.ids=10ee:5000,10ee:5001"
+```
+
+We can identify the pci.ids using the below command.
+
+
+```shell
+$ lspci -nn | grep "Xilinx"
+
+01:00.0 Processing accelerators [1200]: Xilinx Corporation Device [10ee:5000]
+01:00.1 Processing accelerators [1200]: Xilinx Corporation Device [10ee:5001]
+```
+
+With this command, Xilinx card will be assigned to `vfio-pci`
+
+Update grub:
+
+```shell
+sudo update-grub
+```
+
+or
+
+```shell
+sudo grub-mkconfig -o /boot/grub/grub.cfg
+```
+
+Check the new content of Grub by
+
+```shell
+cat /proc/cmdline
+
+BOOT_IMAGE=/boot/vmlinuz-5.15.0-acso root=UUID=2006ace4-1a9a-4d7f-aa7c-685cae3abe4c ro quiet intel_iommu=on vfio-pci.ids=10ee:5000,10ee:5001
+```
+
+Create a new file under `/etc/modprobe.d/vfio.conf` add the below
 
 ```shell
 options vfio-pci ids=10ee:5000,10ee:5001
 ```
 
-5. Update the `initramfs` using the below command and reboot the host.
+Update the `initramfs` using the below command and reboot the host.
 
 ```shell
 sudo update-initramfs -u
-sudo reboot
 ```
 
 After the reboot of the host, check Xilinx is configure for Pass-through using the below command.
